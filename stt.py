@@ -279,17 +279,16 @@ def distributed_train_acoustic_rnn(train_set, test_set, hyper_params, prog_param
         is_chief = prog_params["is_chief"]
         sv, model, t_iterator, v_iterator = build_acoustic_training_rnn(is_chief, True,sess, hyper_params,
                                                                     prog_params, train_set, test_set)
+        if t_iterator is None:
+            logging.Info("Skip init t iterator")
+        else:
+            sess.run(t_iterator.initializer)
 
+        if v_iterator is None:
+            logging.Info("Skip init v iterator")
+        else:
+            sess.run(v_iterator.initializer)
         with sv.managed_session(server.target, config=sess_config) as sess:
-            if t_iterator is None:
-                logging.Info("Skip init t iterator")
-            else:
-                sess._coordinated_creator.tf_sess.run(t_iterator.initializer)
-
-            if v_iterator is None:
-                logging.Info("Skip init v iterator")
-            else:
-                sess._coordinated_creator.tf_sess.run(v_iterator.initializer)
             previous_mean_error_rates = []
             current_step = epoch = 0
             while not sv.should_stop():
