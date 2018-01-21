@@ -30,6 +30,8 @@ def main():
     hyper_params["char_map"] = speech_reco.get_char_map()
     hyper_params["char_map_length"] = speech_reco.get_char_map_length()
 
+    if prog_params['start_ps'] is True:
+        start_ps_server(prog_params)
     if prog_params['train_acoustic'] is True:
         if hyper_params["dataset_size_ordering"] in ['True', 'First_run_only']:
             ordered = True
@@ -91,7 +93,7 @@ def build_language_training_rnn(sess, hyper_params, prog_params, train_set, test
     return model, t_iterator, v_iterator
 
 
-def build_acoustic_training_rnn(sess, hyper_params, prog_params, train_set, test_set):
+def build_acoustic_training_rnn(is_chief,is_ditributed,sess, hyper_params, prog_params, train_set, test_set):
     model = AcousticModel(hyper_params["num_layers"], hyper_params["hidden_size"], hyper_params["batch_size"],
                           hyper_params["max_input_seq_length"], hyper_params["max_target_seq_length"],
                           hyper_params["input_dim"], hyper_params["batch_normalization"],
@@ -117,18 +119,31 @@ def build_acoustic_training_rnn(sess, hyper_params, prog_params, train_set, test
         sess.run(v_iterator.initializer)
 
     # Create the model
-    model.create_training_rnn(hyper_params["dropout_input_keep_prob"], hyper_params["dropout_output_keep_prob"],
+    #tensorboard_dir
+    model.create_training_rnn(is_chief, is_ditributed, hyper_params["dropout_input_keep_prob"], hyper_params["dropout_output_keep_prob"],
                               hyper_params["grad_clip"], hyper_params["learning_rate"],
                               hyper_params["lr_decay_factor"], use_iterator=True)
-    model.add_tensorboard(sess, hyper_params["tensorboard_dir"], prog_params["tb_name"], prog_params["timeline"])
-    model.initialize(sess)
-    model.restore(sess, hyper_params["checkpoint_dir"] + "/acoustic/")
+    model.add_tensorboard(sess, prog_params["train_dir"], prog_params["timeline"])
+    sv = None
+    if is_ditributed:
+        init_op = tf.global_variables_initializer()
+        sv = tf.train.Supervisor(
+            is_chief=is_chief,
+            logdir=prog_params["train_dir"],
+            init_op=init_op,
+            recovery_wait_secs=1,
+            summary_op=None,
+            global_step=model.global_step)
+        model.supervisor = sv
+    else:
+        model.initialize(sess)
+        model.restore(sess, hyper_params["checkpoint_dir"] + "/acoustic/")
 
     # Override the learning rate if given on the command line
     if prog_params["learn_rate"] is not None:
         model.set_learning_rate(sess, prog_params["learn_rate"])
 
-    return model, t_iterator, v_iterator
+    return sv, model, t_iterator, v_iterator
 
 
 def load_language_dataset(_hyper_params):
@@ -173,7 +188,7 @@ def train_acoustic_rnn(train_set, test_set, hyper_params, prog_params):
 
     with tf.Session(config=config) as sess:
         # Initialize the model
-        model, t_iterator, v_iterator = build_acoustic_training_rnn(sess, hyper_params,
+        _, model, t_iterator, v_iterator = build_acoustic_training_rnn(False, False, sess, hyper_params,
                                                                     prog_params, train_set, test_set)
 
         previous_mean_error_rates = []
@@ -182,7 +197,7 @@ def train_acoustic_rnn(train_set, test_set, hyper_params, prog_params):
             # Launch training
             mean_error_rate = 0
             for _ in range(hyper_params["steps_per_checkpoint"]):
-                _step_mean_loss, step_mean_error_rate, current_step, dataset_empty =\
+                _step_mean_loss, step_mean_error_rate, current_step, dataset_empty = \
                     model.run_train_step(sess, hyper_params["mini_batch_size"], hyper_params["rnn_state_reset_ratio"],
                                          run_options=run_options, run_metadata=run_metadata)
                 mean_error_rate += step_mean_error_rate / hyper_params["steps_per_checkpoint"]
@@ -235,6 +250,99 @@ def train_acoustic_rnn(train_set, test_set, hyper_params, prog_params):
                 break
     return
 
+def distributed_train_acoustic_rnn(train_set, test_set, hyper_params, prog_params):
+    config, run_metadata, run_options = configure_tf_session(prog_params["XLA"], prog_params["timeline"])
+    cluster,server,distributed_device = cluster_meta(prog_params)
+    with tf.device(
+            tf.train.replica_device_setter(
+                worker_device=distributed_device,
+                ps_device='/job:ps',
+                cluster=cluster)),tf.Session(config=config) as sess:
+        # Initialize the model
+        sess_config = tf.ConfigProto(
+            allow_soft_placement=True,
+            log_device_placement=False,
+            device_filters=['/job:ps', distributed_device])
+
+        is_chief = prog_params["is_chief"]
+        sv, model, t_iterator, v_iterator = build_acoustic_training_rnn(is_chief, True,sess, hyper_params,
+                                                                    prog_params, train_set, test_set)
+
+        with sv.managed_session(server.target, config=sess_config) as sess:
+            previous_mean_error_rates = []
+            current_step = epoch = 0
+            while not sv.should_stop():
+                # Launch training
+                mean_error_rate = 0
+                for _ in range(hyper_params["steps_per_checkpoint"]):
+                    _step_mean_loss, step_mean_error_rate, current_step, dataset_empty = \
+                        model.run_train_step(sess, hyper_params["mini_batch_size"], hyper_params["rnn_state_reset_ratio"],
+                                             run_options=run_options, run_metadata=run_metadata)
+                    mean_error_rate += step_mean_error_rate / hyper_params["steps_per_checkpoint"]
+
+                    if dataset_empty is True:
+                        epoch += 1
+                        logging.info("End of epoch number : %d", epoch)
+                        if (prog_params["max_epoch"] is not None) and (epoch > prog_params["max_epoch"]):
+                            logging.info("Max number of epochs reached, exiting train step")
+                            break
+                        else:
+                            # Rebuild the train dataset, shuffle it before if needed
+                            if hyper_params["dataset_size_ordering"] in ['False', 'First_run_only']:
+                                logging.info("Shuffling the training dataset")
+                                shuffle(train_set)
+                                train_dataset = model.build_dataset(train_set, hyper_params["batch_size"],
+                                                                    hyper_params["max_input_seq_length"],
+                                                                    hyper_params["max_target_seq_length"],
+                                                                    hyper_params["signal_processing"],
+                                                                    hyper_params["char_map"])
+                                sess.run(t_iterator.make_initializer(train_dataset))
+                            else:
+                                logging.info("Reuse the same training dataset")
+                                sess.run(t_iterator.initializer)
+
+                # Run an evaluation session
+                if (current_step % hyper_params["steps_per_evaluation"] == 0) and (v_iterator is not None):
+                    model.run_evaluation(sess, run_options=run_options, run_metadata=run_metadata)
+                    sess.run(v_iterator.initializer)
+
+                # Decay the learning rate if the model is not improving
+                if mean_error_rate <= min(previous_mean_error_rates, default=sys.maxsize):
+                    previous_mean_error_rates.clear()
+                previous_mean_error_rates.append(mean_error_rate)
+                if len(previous_mean_error_rates) >= 7:
+                    sess.run(model.learning_rate_decay_op)
+                    previous_mean_error_rates.clear()
+                    logging.info("Model is not improving, decaying the learning rate")
+                    if model.learning_rate_var.eval() < 1e-7:
+                        logging.info("Learning rate is too low, exiting")
+                        break
+                if (prog_params["max_epoch"] is not None) and (epoch > prog_params["max_epoch"]):
+                    logging.info("Max number of epochs reached, exiting training session")
+                    break
+                if sv.should_stop():
+                    logging.info("Should stop exit condition")
+                    break
+    return
+def start_ps_server(prog_params):
+    cluster,server,distributed_device = cluster_meta(prog_params)
+    task = prog_params["task"]
+    print('Start parameter server %d' % (task))
+    server = tf.train.Server(
+        cluster, job_name=prog_params["role"], task_index=task)
+    server.join()
+    return
+def cluster_meta(prog_params):
+    ps_spec = prog_params["ps"].split(",")
+    worker_spec = prog_params["workers"].split(",")
+    cluster = tf.train.ClusterSpec({
+        'ps': ps_spec,
+        'worker': worker_spec})
+    task = prog_params["task"]
+    server = tf.train.Server(
+        cluster, job_name=prog_params["role"], task_index=task)
+    device = '/job:%s/task:%d' % (prog_params["role"],task)
+    return cluster,server,device
 
 def process_file(audio_processor, hyper_params, file):
     feat_vec, original_feat_vec_length = audio_processor.process_audio_file(file)
@@ -380,9 +488,19 @@ def parse_args():
     parser.set_defaults(XLA=False)
     parser.add_argument('--XLA', dest='XLA', action='store_true', help='Activate XLA mode in tensorflow')
 
+    parser.add_argument('--train_dir', type=str, default=None,
+                        help='Training direcotry')
+    parser.add_argument('--task', type=int, default=0,
+                        help='Replica index')
+    parser.add_argument('--ps', type=str, default="",
+                        help='Parameter servers')
+    parser.add_argument('--workers', type=str, default="",
+                        help='Workers servers')
+
     group = parser.add_mutually_exclusive_group(required=True)
     group.set_defaults(train_acoustic=False)
     group.set_defaults(train_language=False)
+    group.set_defaults(start_ps=False)
     group.set_defaults(file=None)
     group.set_defaults(record=False)
     group.set_defaults(evaluate=False)
@@ -390,6 +508,8 @@ def parse_args():
                        help='Train the acoustic network')
     group.add_argument('--train_language', dest='train_language', action='store_true',
                        help='Train the language network')
+    group.add_argument('--start_ps', dest='Start parameter server', action='store_true',
+                       help='Start parameter server')
     group.add_argument('--file', type=str, help='Path to a wav file to process')
     group.add_argument('--record', dest='record', action='store_true', help='Record and write result on the fly')
     group.add_argument('--evaluate', dest='evaluate', action='store_true', help='Evaluate WER against the test_set')
@@ -397,10 +517,16 @@ def parse_args():
                                                                                           'language model')
 
     args = parser.parse_args()
+    role = 'worker'
+    if args.start_ps:
+        role = 'ps'
+
     prog_params = {'config_file': args.config, 'tb_name': args.tb_name, 'max_epoch': args.max_epoch,
                    'learn_rate': args.learn_rate, 'timeline': args.timeline, 'train_acoustic': args.train_acoustic,
                    'train_language': args.train_language, 'file': args.file, 'record': args.record,
-                   'evaluate': args.evaluate, 'generate_text': args.generate_text, 'XLA': args.XLA}
+                   'evaluate': args.evaluate, 'generate_text': args.generate_text, 'XLA': args.XLA,
+                   'workers':args.workers, 'ps':args.ps, 'task': args.task, 'train_dir': args.train_dir,
+                   'role': role, 'start_ps': args.start_ps, 'is_chief': args.task==0}
     return prog_params
 
 

@@ -43,6 +43,9 @@ class AcousticModel(object):
         :param num_labels: the numbers of output labels
         """
         # Store model's parameters
+        self.supervisor = None
+        self.is_chief = False
+        self.is_ditributed = False
         self.num_layers = num_layers
         self.hidden_size = hidden_size
         self.batch_size = batch_size
@@ -115,11 +118,12 @@ class AcousticModel(object):
             _, _, self.rnn_tuple_state = self._build_base_rnn(self.inputs_ph, self.input_seq_lengths_ph, True)
 
         # Add the saving and restore operation
-        self.saver_op = self._add_saving_op()
+        if not self.is_ditributed:
+            self.saver_op = self._add_saving_op()
 
         return logits
 
-    def create_training_rnn(self, input_keep_prob, output_keep_prob, grad_clip, learning_rate, lr_decay_factor,
+    def create_training_rnn(self,is_chief, is_ditributed, input_keep_prob, output_keep_prob, grad_clip, learning_rate, lr_decay_factor,
                             use_iterator=False):
         """
         Create the training RNN
@@ -138,9 +142,10 @@ class AcousticModel(object):
             logging.fatal("Trying to create the acoustic RNN but it is already.")
 
         # Store model parameters
+        self.is_ditributed = is_ditributed
+        self.is_chief = is_chief
         self.input_keep_prob = input_keep_prob
         self.output_keep_prob = output_keep_prob
-
         if use_iterator is True:
             mfcc_batch, input_lengths, label_batch = self.iterator_get_next_op
             # Pad if the batch is not complete
@@ -184,7 +189,10 @@ class AcousticModel(object):
                                                            sparse_labels, input_seq_lengths, prediction)
 
         # Add the saving and restore operation
-        self.saver_op = self._add_saving_op()
+        if self.is_ditributed:
+            self.saver_op = None
+        else:
+            self.saver_op = self._add_saving_op()
 
     def _build_base_rnn(self, inputs, input_seq_lengths, forward_only=True):
         """
@@ -406,7 +414,7 @@ class AcousticModel(object):
                                                      global_step=self.global_step)
         return learning_rate_var
 
-    def add_tensorboard(self, session, tensorboard_dir, tb_run_name=None, timeline_enabled=False):
+    def add_tensorboard(self, session, tensorboard_dir, timeline_enabled=False):
         """
         Add the tensorboard operations to the acoustic RNN
         This method will add ops to feed tensorboard
@@ -458,11 +466,8 @@ class AcousticModel(object):
 
         self.train_summaries_op = tf.summary.merge_all(key=graphkey_training)
         self.test_summaries_op = tf.summary.merge_all(key=graphkey_test)
-        if tb_run_name is None:
-            run_name = datetime.now().strftime('%Y-%m-%d--%H-%M-%S')
-        else:
-            run_name = tb_run_name
-        self.summary_writer_op = tf.summary.FileWriter(tensorboard_dir + '/' + run_name + '/', graph=session.graph)
+        if not self.is_ditributed:
+            self.summary_writer_op = tf.summary.FileWriter(tensorboard_dir, graph=session.graph)
 
     def get_learning_rate(self):
         return self.learning_rate_var.eval()
@@ -481,10 +486,11 @@ class AcousticModel(object):
         sess.run(tf.global_variables_initializer())
 
     def save(self, session, checkpoint_dir):
-        # Save the model
-        checkpoint_path = os.path.join(checkpoint_dir, "acousticmodel.ckpt")
-        self.saver_op.save(session, checkpoint_path, global_step=self.global_step)
-        logging.info("Checkpoint saved")
+        if self.saver_op != None:
+            # Save the model
+            checkpoint_path = os.path.join(checkpoint_dir, "acousticmodel.ckpt")
+            self.saver_op.save(session, checkpoint_path, global_step=self.global_step)
+            logging.info("Checkpoint saved")
 
     def restore(self, session, checkpoint_dir):
         ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
@@ -696,7 +702,11 @@ class AcousticModel(object):
 
         if self.tensorboard_dir is not None:
             summary = outputs[-1]
-            self.summary_writer_op.add_summary(summary, global_step)
+            if self.is_ditributed:
+                if self.is_chief:
+                    self.supervisor.summary_computed(session,summary)
+            else:
+                self.summary_writer_op.add_summary(summary, global_step)
 
         mean_loss = accumulated_loss / batchs_count
         mean_error_rate = accumulated_error_rate / batchs_count
