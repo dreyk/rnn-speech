@@ -110,7 +110,6 @@ def build_acoustic_training_rnn(is_chief,is_ditributed,sess, hyper_params, prog_
     v_iterator = None
     if test_set is []:
         t_iterator = model.add_dataset_input(train_dataset)
-        sess.run(t_iterator.initializer)
     else:
         test_dataset = model.build_dataset(test_set, hyper_params["batch_size"], hyper_params["max_input_seq_length"],
                                            hyper_params["max_target_seq_length"], hyper_params["signal_processing"],
@@ -118,8 +117,6 @@ def build_acoustic_training_rnn(is_chief,is_ditributed,sess, hyper_params, prog_
 
         # Build the input stream from the different datasets
         t_iterator, v_iterator = model.add_datasets_input(train_dataset, test_dataset)
-        sess.run(t_iterator.initializer)
-        sess.run(v_iterator.initializer)
 
     # Create the model
     #tensorboard_dir
@@ -193,7 +190,20 @@ def train_acoustic_rnn(train_set, test_set, hyper_params, prog_params):
         # Initialize the model
         _, model, t_iterator, v_iterator = build_acoustic_training_rnn(False, False, sess, hyper_params,
                                                                     prog_params, train_set, test_set)
+        if t_iterator is None:
+            logging.Info("Skip init t iterator")
+        else:
+            sess.run(t_iterator.initializer)
 
+        if v_iterator is None:
+            logging.Info("Skip init v iterator")
+        else:
+            sess.run(v_iterator.initializer)
+
+    # Build the input stream from the different datasets
+    t_iterator, v_iterator = model.add_datasets_input(train_dataset, test_dataset)
+    sess.run(t_iterator.initializer)
+    sess.run(v_iterator.initializer)
         previous_mean_error_rates = []
         current_step = epoch = 0
         local_step = 0
@@ -275,6 +285,15 @@ def distributed_train_acoustic_rnn(train_set, test_set, hyper_params, prog_param
                                                                     prog_params, train_set, test_set)
 
         with sv.managed_session(server.target, config=sess_config) as sess:
+            if t_iterator is None:
+                logging.Info("Skip init t iterator")
+            else:
+                sess.run(t_iterator.initializer)
+
+            if v_iterator is None:
+                logging.Info("Skip init v iterator")
+            else:
+                sess.run(v_iterator.initializer)
             previous_mean_error_rates = []
             current_step = epoch = 0
             while not sv.should_stop():
@@ -530,6 +549,9 @@ def parse_args():
     role = 'worker'
     if args.start_ps:
         role = 'ps'
+    else:
+        if not tf.gfile.Exists(args.train_dir):
+            tf.gfile.MakeDirs(args.train_dir)
 
     prog_params = {'config_file': args.config, 'tb_name': args.tb_name, 'max_epoch': args.max_epoch,
                    'learn_rate': args.learn_rate, 'timeline': args.timeline, 'train_acoustic': args.train_acoustic,
