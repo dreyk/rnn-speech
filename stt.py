@@ -533,7 +533,7 @@ def parse_args():
                        help='Distributed Train the acoustic network')
     group.add_argument('--train_language', dest='train_language', action='store_true',
                        help='Train the language network')
-    group.add_argument('--start_ps', dest='Start parameter server', action='store_true',
+    group.add_argument('--start_ps', dest='start_ps', action='store_true',
                        help='Start parameter server')
     group.add_argument('--file', type=str, help='Path to a wav file to process')
     group.add_argument('--record', dest='record', action='store_true', help='Record and write result on the fly')
