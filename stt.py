@@ -131,7 +131,7 @@ def build_acoustic_training_rnn(is_chief,is_ditributed,sess, hyper_params, prog_
             is_chief=is_chief,
             logdir=prog_params["train_dir"],
             init_op=init_op,
-            local_init_op = tf.control_flow_ops.group(t_iterator.initializer,v_iterator.initializer),
+            local_init_op = tf.group(t_iterator.initializer,v_iterator.initializer),
             recovery_wait_secs=1,
             summary_op=None,
             global_step=model.global_step)
