@@ -499,6 +499,7 @@ def parse_args():
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.set_defaults(train_acoustic=False)
+    group.set_defaults(dtrain_acoustic=False)
     group.set_defaults(train_language=False)
     group.set_defaults(start_ps=False)
     group.set_defaults(file=None)
@@ -506,6 +507,8 @@ def parse_args():
     group.set_defaults(evaluate=False)
     group.add_argument('--train_acoustic', dest='train_acoustic', action='store_true',
                        help='Train the acoustic network')
+    group.add_argument('--dtrain_acoustic', dest='dtrain_acoustic', action='store_true',
+                       help='Distributed Train the acoustic network')
     group.add_argument('--train_language', dest='train_language', action='store_true',
                        help='Train the language network')
     group.add_argument('--start_ps', dest='Start parameter server', action='store_true',
@@ -523,6 +526,7 @@ def parse_args():
 
     prog_params = {'config_file': args.config, 'tb_name': args.tb_name, 'max_epoch': args.max_epoch,
                    'learn_rate': args.learn_rate, 'timeline': args.timeline, 'train_acoustic': args.train_acoustic,
+                   'dtrain_acoustic': args.dtrain_acoustic,
                    'train_language': args.train_language, 'file': args.file, 'record': args.record,
                    'evaluate': args.evaluate, 'generate_text': args.generate_text, 'XLA': args.XLA,
                    'worker_hosts':args.worker_hosts, 'ps_hosts':args.ps_hosts, 'task': args.task, 'train_dir': args.train_dir,
