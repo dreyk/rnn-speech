@@ -333,8 +333,8 @@ def start_ps_server(prog_params):
     server.join()
     return
 def cluster_meta(prog_params):
-    ps_spec = prog_params["ps"].split(",")
-    worker_spec = prog_params["workers"].split(",")
+    ps_spec = prog_params["ps_hosts"].split(",")
+    worker_spec = prog_params["worker_hosts"].split(",")
     cluster = tf.train.ClusterSpec({
         'ps': ps_spec,
         'worker': worker_spec})
@@ -492,9 +492,9 @@ def parse_args():
                         help='Training direcotry')
     parser.add_argument('--task', type=int, default=0,
                         help='Replica index')
-    parser.add_argument('--ps', type=str, default="",
+    parser.add_argument('--ps_hosts', type=str, default="",
                         help='Parameter servers')
-    parser.add_argument('--workers', type=str, default="",
+    parser.add_argument('--worker_hosts', type=str, default="",
                         help='Workers servers')
 
     group = parser.add_mutually_exclusive_group(required=True)
@@ -525,7 +525,7 @@ def parse_args():
                    'learn_rate': args.learn_rate, 'timeline': args.timeline, 'train_acoustic': args.train_acoustic,
                    'train_language': args.train_language, 'file': args.file, 'record': args.record,
                    'evaluate': args.evaluate, 'generate_text': args.generate_text, 'XLA': args.XLA,
-                   'workers':args.workers, 'ps':args.ps, 'task': args.task, 'train_dir': args.train_dir,
+                   'worker_hosts':args.worker_hosts, 'ps_hosts':args.ps_hosts, 'task': args.task, 'train_dir': args.train_dir,
                    'role': role, 'start_ps': args.start_ps, 'is_chief': args.task==0}
     return prog_params
 
