@@ -544,10 +544,10 @@ def parse_args():
     args = parser.parse_args()
     role = 'worker'
     if args.start_ps is True:
-        print "PS Node"
+        print("PS Node")
         role = 'ps'
     else:
-        print "Worker Node"
+        print("Worker Node")
         if not tf.gfile.Exists(args.train_dir):
             tf.gfile.MakeDirs(args.train_dir)
 
