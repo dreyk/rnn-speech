@@ -32,7 +32,7 @@ def main():
 
     if prog_params['start_ps'] is True:
         start_ps_server(prog_params)
-    if prog_params['train_acoustic'] is True:
+    if (prog_params['train_acoustic'] is True) or (prog_params['dtrain_acoustic'] is True):
         if hyper_params["dataset_size_ordering"] in ['True', 'First_run_only']:
             ordered = True
         else:
@@ -42,7 +42,10 @@ def main():
                                                                 hyper_params["training_filelist_cache"],
                                                                 ordered,
                                                                 hyper_params["train_frac"])
-        train_acoustic_rnn(train_set, test_set, hyper_params, prog_params)
+        if prog_params['train_acoustic'] is True:
+            train_acoustic_rnn(train_set, test_set, hyper_params, prog_params)
+        else:
+            distributed_train_acoustic_rnn(train_set, test_set, hyper_params, prog_params)
     elif prog_params['train_language'] is True:
         train_set, test_set = load_language_dataset(hyper_params)
         train_language_rnn(train_set, test_set, hyper_params, prog_params)
