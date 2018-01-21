@@ -200,10 +200,6 @@ def train_acoustic_rnn(train_set, test_set, hyper_params, prog_params):
         else:
             sess.run(v_iterator.initializer)
 
-    # Build the input stream from the different datasets
-    t_iterator, v_iterator = model.add_datasets_input(train_dataset, test_dataset)
-    sess.run(t_iterator.initializer)
-    sess.run(v_iterator.initializer)
         previous_mean_error_rates = []
         current_step = epoch = 0
         local_step = 0
