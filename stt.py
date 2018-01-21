@@ -284,12 +284,12 @@ def distributed_train_acoustic_rnn(train_set, test_set, hyper_params, prog_param
             if t_iterator is None:
                 logging.Info("Skip init t iterator")
             else:
-                sess.run(t_iterator.initializer)
+                sess._coordinated_creator.tf_sess.run(t_iterator.initializer)
 
             if v_iterator is None:
                 logging.Info("Skip init v iterator")
             else:
-                sess.run(v_iterator.initializer)
+                sess._coordinated_creator.tf_sess.run(v_iterator.initializer)
             previous_mean_error_rates = []
             current_step = epoch = 0
             while not sv.should_stop():
