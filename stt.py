@@ -350,8 +350,6 @@ def start_ps_server(prog_params):
     cluster,server,distributed_device = cluster_meta(prog_params)
     task = prog_params["task"]
     print('Start parameter server %d' % (task))
-    server = tf.train.Server(
-        cluster, job_name=prog_params["role"], task_index=task)
     server.join()
     return
 def cluster_meta(prog_params):
