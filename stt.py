@@ -252,7 +252,7 @@ def distributed_train_acoustic_rnn(train_set, test_set, hyper_params, prog_param
             tf.train.replica_device_setter(
                 worker_device=distributed_device,
                 ps_device='/job:ps',
-                cluster=cluster)),tf.Session(config=config) as sess0:
+                cluster=cluster)),tf.Session(server.target,config=config) as sess:
         # Initialize the model
         sess_config = tf.ConfigProto(
             allow_soft_placement=True,
@@ -260,8 +260,7 @@ def distributed_train_acoustic_rnn(train_set, test_set, hyper_params, prog_param
             device_filters=['/job:ps', distributed_device])
 
         is_chief = prog_params["is_chief"]
-        sv, model, t_iterator, v_iterator = build_acoustic_training_rnn(is_chief, True,sess0, hyper_params,
-                                                                    prog_params, train_set, test_set)
+        sv, model, t_iterator, v_iterator = build_acoustic_training_rnn(is_chief, True,sess, hyper_params,prog_params, train_set, test_set)
 
         with sv.managed_session(server.target, config=sess_config) as sess:
             sess.run(model.t_iterator_init)
