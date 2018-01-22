@@ -43,6 +43,9 @@ class AcousticModel(object):
         :param num_labels: the numbers of output labels
         """
         # Store model's parameters
+        self.iterator_handle = None
+        self.handle_train = None
+        self.handle_v = None
         self.supervisor = None
         self.is_chief = False
         self.is_ditributed = False
@@ -652,10 +655,11 @@ class AcousticModel(object):
             output_feed.append(self.accumulate_gradients_op)
             # and feed the dropout layer the keep probability values
             input_feed = {self.input_keep_prob_ph: self.input_keep_prob,
-                          self.output_keep_prob_ph: self.output_keep_prob}
+                          self.output_keep_prob_ph: self.output_keep_prob,
+                          self.iterator_handle: self.handle_train}
         else:
             # No need to apply a dropout, set the keep probability to 1.0
-            input_feed = {self.input_keep_prob_ph: 1.0, self.output_keep_prob_ph: 1.0}
+            input_feed = {self.input_keep_prob_ph: 1.0, self.output_keep_prob_ph: 1.0, self.iterator_handle: self.handle_v}
 
         # Actually run the tensorflow session
         start_time = time.time()
@@ -874,11 +878,14 @@ class AcousticModel(object):
         :return t_iterator: tensorflow Iterator for the train dataset
         :return v_iterator: tensorflow Iterator for the valid dataset
         """
-        t_iterator = train_dataset.make_initializable_iterator()
-        v_iterator = valid_dataset.make_initializable_iterator()
-        self.iterator_get_next_op = tf.cond(self.is_training_var, lambda: t_iterator.get_next(),
-                                            lambda: v_iterator.get_next())
-        return t_iterator, v_iterator
+        t_iterator_handle = train_dataset.make_initializable_iterator().string_handle()
+        v_iterator_handle = valid_dataset.make_initializable_iterator().string_handle()
+
+        handle = tf.placeholder(tf.string, shape=[])
+        self.iterator_handle = handle
+        iterator = tf.contrib.data.Iterator.from_string_handle(handle, train_dataset.output_types, train_dataset.output_shapes)
+        self.iterator_get_next_op = iterator.get_next()
+        return t_iterator_handle, v_iterator_handle
 
     def _write_timeline(self, run_metadata, inter_time, action=""):
         logging.debug("--- Action %s duration : %.4f", action, time.time() - inter_time)

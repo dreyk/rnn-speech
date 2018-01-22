@@ -131,7 +131,6 @@ def build_acoustic_training_rnn(is_chief,is_ditributed,sess, hyper_params, prog_
             is_chief=is_chief,
             logdir=prog_params["train_dir"],
             init_op=init_op,
-            local_init_op = tf.group(t_iterator.initializer,v_iterator.initializer),
             recovery_wait_secs=1,
             summary_op=None,
             global_step=model.global_step)
@@ -280,9 +279,14 @@ def distributed_train_acoustic_rnn(train_set, test_set, hyper_params, prog_param
         is_chief = prog_params["is_chief"]
         sv, model, t_iterator, v_iterator = build_acoustic_training_rnn(is_chief, True,sess, hyper_params,
                                                                     prog_params, train_set, test_set)
+
         with sv.managed_session(server.target, config=sess_config) as sess:
+
+            model.handle_train, model.handle_v = sess.run([t_iterator, v_iterator])
+
             previous_mean_error_rates = []
             current_step = epoch = 0
+
             while not sv.should_stop():
                 # Launch training
                 mean_error_rate = 0
@@ -300,23 +304,12 @@ def distributed_train_acoustic_rnn(train_set, test_set, hyper_params, prog_param
                             break
                         else:
                             # Rebuild the train dataset, shuffle it before if needed
-                            if hyper_params["dataset_size_ordering"] in ['False', 'First_run_only']:
-                                logging.info("Shuffling the training dataset")
-                                shuffle(train_set)
-                                train_dataset = model.build_dataset(train_set, hyper_params["batch_size"],
-                                                                    hyper_params["max_input_seq_length"],
-                                                                    hyper_params["max_target_seq_length"],
-                                                                    hyper_params["signal_processing"],
-                                                                    hyper_params["char_map"])
-                                sess.run(t_iterator.make_initializer(train_dataset))
-                            else:
-                                logging.info("Reuse the same training dataset")
-                                sess.run(t_iterator.initializer)
+                            model.handle_train = sess.run([t_iterator])
 
                 # Run an evaluation session
                 if (current_step % hyper_params["steps_per_evaluation"] == 0) and (v_iterator is not None):
                     model.run_evaluation(sess, run_options=run_options, run_metadata=run_metadata)
-                    sess.run(v_iterator.initializer)
+                    model.handle_v = sess.run([v_iterator])
 
                 # Decay the learning rate if the model is not improving
                 if mean_error_rate <= min(previous_mean_error_rates, default=sys.maxsize):
