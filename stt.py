@@ -201,10 +201,11 @@ def train_acoustic_rnn(train_set, test_set, hyper_params, prog_params):
             # Launch training
             mean_error_rate = 0
             for _ in range(hyper_params["steps_per_checkpoint"]):
-                logging.info("Train local step  : %d, global step %d", local_step, current_step)
+                logging.info("Start local step  : %d, global step %d", local_step, current_step)
                 _step_mean_loss, step_mean_error_rate, current_step, dataset_empty = \
                     model.run_train_step(sess, hyper_params["mini_batch_size"], hyper_params["rnn_state_reset_ratio"],
                                          run_options=run_options, run_metadata=run_metadata)
+                logging.info("Stop local step  : %d, global step %d", local_step, current_step)
                 local_step += 1
                 mean_error_rate += step_mean_error_rate / hyper_params["steps_per_checkpoint"]
 
@@ -275,10 +276,11 @@ def distributed_train_acoustic_rnn(train_set, test_set, hyper_params, prog_param
                 # Launch training
                 mean_error_rate = 0
                 for _ in range(hyper_params["steps_per_checkpoint"]):
-                    logging.info("Train local step  : %d, global step %d", local_step, current_step)
+                    logging.info("Start local step  : %d, global step %d", local_step, current_step)
                     _step_mean_loss, step_mean_error_rate, current_step, dataset_empty = \
                         model.run_train_step(sess, hyper_params["mini_batch_size"], hyper_params["rnn_state_reset_ratio"],
                                              run_options=run_options, run_metadata=run_metadata)
+                    logging.info("Stop local step  : %d, global step %d", local_step, current_step)
                     mean_error_rate += step_mean_error_rate / hyper_params["steps_per_checkpoint"]
                     local_step += 1
                     if dataset_empty is True:
