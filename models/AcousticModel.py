@@ -672,7 +672,7 @@ class AcousticModel(object):
     def start_batch(self, session, is_training, run_options=None, run_metadata=None):
         output = [self.acc_error_rate_zero_op, self.acc_mean_loss_zero_op, self.mini_batch_zero_op]
 
-        self.set_is_training(session, is_training)
+        ##self.set_is_training(session, is_training)
         if is_training:
             output.append(self.acc_gradients_zero_op)
 
