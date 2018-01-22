@@ -269,7 +269,7 @@ def distributed_train_acoustic_rnn(train_set, test_set, hyper_params, prog_param
             tf.train.replica_device_setter(
                 worker_device=distributed_device,
                 ps_device='/job:ps',
-                cluster=cluster)),tf.Session(config=config) as sess:
+                cluster=cluster)),tf.Session(config=config) as sess0:
         # Initialize the model
         sess_config = tf.ConfigProto(
             allow_soft_placement=True,
@@ -277,13 +277,14 @@ def distributed_train_acoustic_rnn(train_set, test_set, hyper_params, prog_param
             device_filters=['/job:ps', distributed_device])
 
         is_chief = prog_params["is_chief"]
-        sv, model, t_iterator, v_iterator = build_acoustic_training_rnn(is_chief, True,sess, hyper_params,
+        sv, model, t_iterator, v_iterator = build_acoustic_training_rnn(is_chief, True,sess0, hyper_params,
                                                                     prog_params, train_set, test_set)
-
+        t_handle = t_iterator.string_handle()
+        v_handle = v_iterator.string_handle()
         with sv.managed_session(server.target, config=sess_config) as sess:
 
-            model.handle_train, model.handle_v = sess.run([t_iterator, v_iterator])
-
+            model.handle_train, model.handle_v = sess.run([t_handle, v_handle])
+            sess0.run(t_iterator.initializer)
             previous_mean_error_rates = []
             current_step = epoch = 0
 
@@ -304,12 +305,12 @@ def distributed_train_acoustic_rnn(train_set, test_set, hyper_params, prog_param
                             break
                         else:
                             # Rebuild the train dataset, shuffle it before if needed
-                            model.handle_train = sess.run([t_iterator])
+                            model.handle_train = sess.run([t_handle])
 
                 # Run an evaluation session
                 if (current_step % hyper_params["steps_per_evaluation"] == 0) and (v_iterator is not None):
                     model.run_evaluation(sess, run_options=run_options, run_metadata=run_metadata)
-                    model.handle_v = sess.run([v_iterator])
+                    model.handle_v = sess.run([v_handle])
 
                 # Decay the learning rate if the model is not improving
                 if mean_error_rate <= min(previous_mean_error_rates, default=sys.maxsize):
