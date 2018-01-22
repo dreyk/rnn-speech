@@ -106,7 +106,6 @@ def build_acoustic_training_rnn(is_chief,is_ditributed,sess, hyper_params, prog_
     train_dataset = model.build_dataset(train_set, hyper_params["batch_size"], hyper_params["max_input_seq_length"],
                                         hyper_params["max_target_seq_length"], hyper_params["signal_processing"],
                                         hyper_params["char_map"])
-
     v_iterator = None
     if test_set is []:
         t_iterator = model.add_dataset_input(train_dataset)
@@ -114,7 +113,8 @@ def build_acoustic_training_rnn(is_chief,is_ditributed,sess, hyper_params, prog_
         test_dataset = model.build_dataset(test_set, hyper_params["batch_size"], hyper_params["max_input_seq_length"],
                                            hyper_params["max_target_seq_length"], hyper_params["signal_processing"],
                                            hyper_params["char_map"])
-
+        test_dataset = test_dataset.repeat()
+        train_dataset = train_dataset.repeat()
         # Build the input stream from the different datasets
         t_iterator, v_iterator = model.add_datasets_input(train_dataset, test_dataset)
 
@@ -279,10 +279,9 @@ def distributed_train_acoustic_rnn(train_set, test_set, hyper_params, prog_param
         is_chief = prog_params["is_chief"]
         sv, model, t_iterator, v_iterator = build_acoustic_training_rnn(is_chief, True,sess0, hyper_params,
                                                                     prog_params, train_set, test_set)
-        model.handle_train = sess0.run(t_iterator.string_handle())
-        model.handle_v = sess0.run(v_iterator.string_handle())
+
         with sv.managed_session(server.target, config=sess_config) as sess:
-            sess.run(t_iterator.initializer)
+            model.handle_train = sess.run([t_iterator,v_iterator])
             previous_mean_error_rates = []
             current_step = epoch = 0
 
@@ -295,19 +294,8 @@ def distributed_train_acoustic_rnn(train_set, test_set, hyper_params, prog_param
                                              run_options=run_options, run_metadata=run_metadata)
                     mean_error_rate += step_mean_error_rate / hyper_params["steps_per_checkpoint"]
 
-                    if dataset_empty is True:
-                        epoch += 1
-                        logging.info("End of epoch number : %d", epoch)
-                        if (prog_params["max_epoch"] is not None) and (epoch > prog_params["max_epoch"]):
-                            logging.info("Max number of epochs reached, exiting train step")
-                            break
-                        else:
-                            # Rebuild the train dataset, shuffle it before if needed
-                            sess.run(t_iterator.initializer)
-
                 # Run an evaluation session
                 if (current_step % hyper_params["steps_per_evaluation"] == 0) and (v_iterator is not None):
-                    sess.run(v_iterator.initializer)
                     model.run_evaluation(sess, run_options=run_options, run_metadata=run_metadata)
 
 

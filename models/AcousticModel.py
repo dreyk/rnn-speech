@@ -878,8 +878,8 @@ class AcousticModel(object):
         :return t_iterator: tensorflow Iterator for the train dataset
         :return v_iterator: tensorflow Iterator for the valid dataset
         """
-        t_iterator = train_dataset.make_initializable_iterator()
-        v_iterator = valid_dataset.make_initializable_iterator()
+        t_iterator = train_dataset.make_one_shot_iterator().string_handle()
+        v_iterator = valid_dataset.make_one_shot_iterator().string_handle()
 
         self.iterator_handle = tf.placeholder(tf.string, shape=[])
         iterator = tf.contrib.data.Iterator.from_string_handle(self.iterator_handle, train_dataset.output_types, train_dataset.output_shapes)
