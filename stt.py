@@ -106,7 +106,7 @@ def build_acoustic_training_rnn(is_chief,is_ditributed,sess, hyper_params, prog_
     train_dataset = model.build_dataset(train_set, hyper_params["batch_size"], hyper_params["max_input_seq_length"],
                                         hyper_params["max_target_seq_length"], hyper_params["signal_processing"],
                                         hyper_params["char_map"])
-    train_dataset = train_dataset.shuffle(len(train_set),reshuffle_each_iteration=True)
+    train_dataset = train_dataset.shuffle(10,reshuffle_each_iteration=True)
     v_iterator = None
     if test_set is []:
         t_iterator = model.add_dataset_input(train_dataset)
