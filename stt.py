@@ -113,8 +113,6 @@ def build_acoustic_training_rnn(is_chief,is_ditributed,sess, hyper_params, prog_
         test_dataset = model.build_dataset(test_set, hyper_params["batch_size"], hyper_params["max_input_seq_length"],
                                            hyper_params["max_target_seq_length"], hyper_params["signal_processing"],
                                            hyper_params["char_map"])
-        test_dataset = test_dataset.repeat()
-        train_dataset = train_dataset.repeat()
         # Build the input stream from the different datasets
         t_iterator, v_iterator = model.add_datasets_input(train_dataset, test_dataset)
 
