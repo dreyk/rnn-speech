@@ -106,6 +106,7 @@ def build_acoustic_training_rnn(is_chief,is_ditributed,sess, hyper_params, prog_
     train_dataset = model.build_dataset(train_set, hyper_params["batch_size"], hyper_params["max_input_seq_length"],
                                         hyper_params["max_target_seq_length"], hyper_params["signal_processing"],
                                         hyper_params["char_map"])
+    train_dataset = train_dataset.shuffle(len(train_set),reshuffle_each_iteration=True)
     v_iterator = None
     if test_set is []:
         t_iterator = model.add_dataset_input(train_dataset)
@@ -135,7 +136,7 @@ def build_acoustic_training_rnn(is_chief,is_ditributed,sess, hyper_params, prog_
         model.supervisor = sv
     else:
         model.initialize(sess)
-        model.restore(sess, hyper_params["checkpoint_dir"] + "/acoustic/")
+        model.restore(sess, prog_params["train_dir"])
 
     # Override the learning rate if given on the command line
     if prog_params["learn_rate"] is not None:
@@ -188,16 +189,11 @@ def train_acoustic_rnn(train_set, test_set, hyper_params, prog_params):
         # Initialize the model
         _, model, t_iterator, v_iterator = build_acoustic_training_rnn(False, False, sess, hyper_params,
                                                                     prog_params, train_set, test_set)
-        if t_iterator is None:
-            logging.Info("Skip init t iterator")
-        else:
-            sess.run(t_iterator.initializer)
-
-        if v_iterator is None:
-            logging.Info("Skip init v iterator")
-        else:
-            sess.run(v_iterator.initializer)
-
+        sess.run(model.t_iterator_init)
+        model.handle_train = sess.run(t_iterator)
+        if v_iterator is not None:
+            sess.run(model.v_iterator_init)
+            model.handle_v = sess.run(v_iterator)
         previous_mean_error_rates = []
         current_step = epoch = 0
         local_step = 0
@@ -219,27 +215,15 @@ def train_acoustic_rnn(train_set, test_set, hyper_params, prog_params):
                         logging.info("Max number of epochs reached, exiting train step")
                         break
                     else:
-                        # Rebuild the train dataset, shuffle it before if needed
-                        if hyper_params["dataset_size_ordering"] in ['False', 'First_run_only']:
-                            logging.info("Shuffling the training dataset")
-                            shuffle(train_set)
-                            train_dataset = model.build_dataset(train_set, hyper_params["batch_size"],
-                                                                hyper_params["max_input_seq_length"],
-                                                                hyper_params["max_target_seq_length"],
-                                                                hyper_params["signal_processing"],
-                                                                hyper_params["char_map"])
-                            sess.run(t_iterator.make_initializer(train_dataset))
-                        else:
-                            logging.info("Reuse the same training dataset")
-                            sess.run(t_iterator.initializer)
+                        sess.run(model.t_iterator_init)
 
             # Save the model
-            model.save(sess, hyper_params["checkpoint_dir"] + "/acoustic/")
+            model.save(sess, prog_params["train_dir"])
 
             # Run an evaluation session
             if (current_step % hyper_params["steps_per_evaluation"] == 0) and (v_iterator is not None):
                 model.run_evaluation(sess, run_options=run_options, run_metadata=run_metadata)
-                sess.run(v_iterator.initializer)
+                sess.run(model.v_iterator_init)
 
             # Decay the learning rate if the model is not improving
             if mean_error_rate <= min(previous_mean_error_rates, default=sys.maxsize):
@@ -252,7 +236,7 @@ def train_acoustic_rnn(train_set, test_set, hyper_params, prog_params):
                 if model.learning_rate_var.eval() < 1e-7:
                     logging.info("Learning rate is too low, exiting")
                     break
-                model.save(sess, hyper_params["checkpoint_dir"] + "/acoustic/")
+                model.save(sess, prog_params["train_dir"])
                 logging.info("Overwriting the checkpoint file with the new learning rate")
 
             if (prog_params["max_epoch"] is not None) and (epoch > prog_params["max_epoch"]):
@@ -280,8 +264,10 @@ def distributed_train_acoustic_rnn(train_set, test_set, hyper_params, prog_param
 
         with sv.managed_session(server.target, config=sess_config) as sess:
             sess.run(model.t_iterator_init)
-            sess.run(model.v_iterator_init)
-            model.handle_train,model.handle_v = sess.run([t_iterator,v_iterator])
+            model.handle_train = sess.run(t_iterator)
+            if v_iterator is not None:
+                sess.run(model.v_iterator_init)
+                model.handle_v = sess.run(v_iterator)
             previous_mean_error_rates = []
             current_step = epoch = 0
             local_step  = 0
@@ -302,11 +288,13 @@ def distributed_train_acoustic_rnn(train_set, test_set, hyper_params, prog_param
                         logging.info("Max number of epochs reached, exiting train step")
                         break
                     else:
+                        # Start again
                         sess.run(model.t_iterator_init)
 
                 # Run an evaluation session
-                if (current_step % hyper_params["steps_per_evaluation"] == 0) and (v_iterator is not None):
+                if (local_step % hyper_params["steps_per_evaluation"] == 0) and (v_iterator is not None):
                     model.run_evaluation(sess, run_options=run_options, run_metadata=run_metadata)
+                    # Shuffle
                     sess.run(model.v_iterator_init)
 
 

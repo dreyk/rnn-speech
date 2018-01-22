@@ -868,6 +868,14 @@ class AcousticModel(object):
         self.iterator_get_next_op = iterator.get_next()
         return iterator
 
+        t0_iterator = dataset.make_initializable_iterator()
+        self.t_iterator_init = t0_iterator.initializer
+        t_iterator  = t0_iterator.string_handle()
+        self.iterator_handle = tf.placeholder(tf.string, shape=[])
+        iterator = tf.contrib.data.Iterator.from_string_handle(self.iterator_handle, dataset.output_types,dataset.output_shapes)
+        self.iterator_get_next_op = iterator.get_next()
+        return t_iterator
+
     def add_datasets_input(self, train_dataset, valid_dataset):
         """
         Add training and evaluation datasets for input to the model
