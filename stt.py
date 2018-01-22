@@ -281,22 +281,35 @@ def distributed_train_acoustic_rnn(train_set, test_set, hyper_params, prog_param
                                                                     prog_params, train_set, test_set)
 
         with sv.managed_session(server.target, config=sess_config) as sess:
+            sess.run(model.t_iterator_init)
+            sess.run(model.v_iterator_init)
             model.handle_train,model.handle_v = sess.run([t_iterator,v_iterator])
             previous_mean_error_rates = []
             current_step = epoch = 0
-
+            local_step  = 0
             while not sv.should_stop():
                 # Launch training
                 mean_error_rate = 0
                 for _ in range(hyper_params["steps_per_checkpoint"]):
+                    logging.info("Train local step  : %d, global step ", local_step, current_step)
                     _step_mean_loss, step_mean_error_rate, current_step, dataset_empty = \
                         model.run_train_step(sess, hyper_params["mini_batch_size"], hyper_params["rnn_state_reset_ratio"],
                                              run_options=run_options, run_metadata=run_metadata)
                     mean_error_rate += step_mean_error_rate / hyper_params["steps_per_checkpoint"]
+                    local_step += 1
+                    if dataset_empty is True:
+                        epoch += 1
+                    logging.info("End of epoch number : %d", epoch)
+                    if (prog_params["max_epoch"] is not None) and (epoch > prog_params["max_epoch"]):
+                        logging.info("Max number of epochs reached, exiting train step")
+                        break
+                    else:
+                        sess.run(model.t_iterator_init)
 
                 # Run an evaluation session
                 if (current_step % hyper_params["steps_per_evaluation"] == 0) and (v_iterator is not None):
                     model.run_evaluation(sess, run_options=run_options, run_metadata=run_metadata)
+                    sess.run(model.v_iterator_init)
 
 
                 # Decay the learning rate if the model is not improving

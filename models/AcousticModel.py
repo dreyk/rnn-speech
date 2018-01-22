@@ -44,6 +44,8 @@ class AcousticModel(object):
         """
         # Store model's parameters
         self.iterator_handle = None
+        self.t_iterator_init = None
+        self.v_iterator_init = None
         self.handle_train = None
         self.handle_v = None
         self.supervisor = None
@@ -878,8 +880,12 @@ class AcousticModel(object):
         :return t_iterator: tensorflow Iterator for the train dataset
         :return v_iterator: tensorflow Iterator for the valid dataset
         """
-        t_iterator = train_dataset.make_one_shot_iterator().string_handle()
-        v_iterator = valid_dataset.make_one_shot_iterator().string_handle()
+        t0_iterator = train_dataset.make_initializable_iterator()
+        self.t_iterator_init = t0_iterator.initializer
+        t_iterator  = t0_iterator.string_handle()
+        v0_iterator = valid_dataset.make_initializable_iterator()
+        self.v_iterator_init = v0_iterator.initializer
+        v_iterator  = v0_iterator.string_handle()
 
         self.iterator_handle = tf.placeholder(tf.string, shape=[])
         iterator = tf.contrib.data.Iterator.from_string_handle(self.iterator_handle, train_dataset.output_types, train_dataset.output_shapes)
