@@ -279,12 +279,10 @@ def distributed_train_acoustic_rnn(train_set, test_set, hyper_params, prog_param
         is_chief = prog_params["is_chief"]
         sv, model, t_iterator, v_iterator = build_acoustic_training_rnn(is_chief, True,sess0, hyper_params,
                                                                     prog_params, train_set, test_set)
-        t_handle = t_iterator.string_handle()
-        v_handle = v_iterator.string_handle()
+        model.handle_train = sess0.run(t_iterator.string_handle())
+        model.handle_v = sess0.run(v_iterator.string_handle())
         with sv.managed_session(server.target, config=sess_config) as sess:
-
-            model.handle_train, model.handle_v = sess.run([t_handle, v_handle])
-            sess0.run(t_iterator.initializer)
+            sess.run(t_iterator.initializer)
             previous_mean_error_rates = []
             current_step = epoch = 0
 
@@ -305,12 +303,13 @@ def distributed_train_acoustic_rnn(train_set, test_set, hyper_params, prog_param
                             break
                         else:
                             # Rebuild the train dataset, shuffle it before if needed
-                            model.handle_train = sess.run([t_handle])
+                            sess.run(t_iterator.initializer)
 
                 # Run an evaluation session
                 if (current_step % hyper_params["steps_per_evaluation"] == 0) and (v_iterator is not None):
+                    sess.run(v_iterator.initializer)
                     model.run_evaluation(sess, run_options=run_options, run_metadata=run_metadata)
-                    model.handle_v = sess.run([v_handle])
+
 
                 # Decay the learning rate if the model is not improving
                 if mean_error_rate <= min(previous_mean_error_rates, default=sys.maxsize):
