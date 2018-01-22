@@ -283,13 +283,13 @@ def distributed_train_acoustic_rnn(train_set, test_set, hyper_params, prog_param
                     local_step += 1
                     if dataset_empty is True:
                         epoch += 1
-                    logging.info("End of epoch number : %d", epoch)
-                    if (prog_params["max_epoch"] is not None) and (epoch > prog_params["max_epoch"]):
-                        logging.info("Max number of epochs reached, exiting train step")
-                        break
-                    else:
-                        # Start again
-                        sess.run(model.t_iterator_init)
+                        logging.info("End of epoch number : %d", epoch)
+                        if (prog_params["max_epoch"] is not None) and (epoch > prog_params["max_epoch"]):
+                            logging.info("Max number of epochs reached, exiting train step")
+                            break
+                        else:
+                            sess.run(model.t_iterator_init)
+
 
                 # Run an evaluation session
                 if is_chief:
