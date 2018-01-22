@@ -292,10 +292,11 @@ def distributed_train_acoustic_rnn(train_set, test_set, hyper_params, prog_param
                         sess.run(model.t_iterator_init)
 
                 # Run an evaluation session
-                if (local_step % hyper_params["steps_per_evaluation"] == 0) and (v_iterator is not None):
-                    model.run_evaluation(sess, run_options=run_options, run_metadata=run_metadata)
-                    # Shuffle
-                    sess.run(model.v_iterator_init)
+                if is_chief:
+                    if (local_step % hyper_params["steps_per_evaluation"] == 0) and (v_iterator is not None):
+                        model.run_evaluation(sess, run_options=run_options, run_metadata=run_metadata)
+                        # Shuffle
+                        sess.run(model.v_iterator_init)
 
 
                 # Decay the learning rate if the model is not improving
