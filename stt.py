@@ -281,7 +281,7 @@ def distributed_train_acoustic_rnn(train_set, test_set, hyper_params, prog_param
                                                                     prog_params, train_set, test_set)
 
         with sv.managed_session(server.target, config=sess_config) as sess:
-            model.handle_train = sess.run([t_iterator,v_iterator])
+            model.handle_train,model.handle_v = sess.run([t_iterator,v_iterator])
             previous_mean_error_rates = []
             current_step = epoch = 0
 
